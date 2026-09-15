@@ -1,0 +1,14 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# Data outputs and logs
+*.csv
+*.json
+*.txt
+!requirements.txt
+!README.md
