@@ -57,6 +57,12 @@ Last updated: 2026-09-17
 - F8 hotkey responsiveness during extraction.
 - Resume after mid-conversation stop.
 
+## Recent Bug Fixes (2026-09-19)
+
+- **Nested Labels UI**: Fixed issue where Zalo hides the standard `conversationList` when viewing the "Labels" (Phân loại) tab. The script now scans for any visible `Table` or `List` on the left sidebar and uses `.descendants` to find text nodes, preventing it from missing contacts in custom labels.
+- **Negative Coordinates**: Fixed issue where contacts were ignored if the Zalo window was on a secondary monitor with negative coordinates (`rect.left < 0`).
+- **Early Termination**: Fixed a bug where skipping already-completed contacts caused the `no_new_scrolls` counter to increment and terminate the scan prematurely. It now resets the counter as long as ANY SQL contact (completed or not) is found in the viewport.
+
 ## Local data investigation (2026-09-17)
 
 **Result: Direct data extraction is NOT feasible for messages.**
