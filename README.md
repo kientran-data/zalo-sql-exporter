@@ -1,56 +1,115 @@
-# Zalo SQL Exporter - Khảo sát Phase 1
+# Zalo SQL Exporter
 
-Dự án này sử dụng Windows UI Automation (`pywinauto`) để đọc nội dung hiển thị trên cửa sổ Zalo PC.
+Export chat history from Zalo PC for contacts whose custom nickname contains "sql".
 
-## Cài đặt
+## Requirements
 
-Mở PowerShell và chạy các lệnh sau trong thư mục `c:\Users\Admin\Documents\work\kien\zalo-sql-exporter`:
+- Windows 10/11
+- Zalo PC installed and logged in
+- Python 3.11+
+
+## Setup
 
 ```powershell
+cd c:\Users\Admin\Documents\work\kien\zalo-sql-exporter
 python -m venv .venv
-.\.venv\Scripts\activate
+.\.venv\Scripts\Activate.ps1
 pip install pywinauto
 ```
 
-*(Lưu ý: Quá trình cài đặt `pywinauto` và `pywin32` có thể mất một lúc tùy thuộc vào mạng).*
+## Commands
 
-## Bước 1: Khảo sát cấu trúc UI (Chạy trước)
+```powershell
+# Full run: discover SQL contacts + extract all conversations
+python zalo_phase2.py
 
-Để không giả định framework hoặc cấu trúc dữ liệu của Zalo (có thể là Electron, Qt, hoặc native), chúng ta cần xuất cây UI (Accessibility Tree) ra file log để phân tích xem có đọc được nội dung tin nhắn không.
+# Step-by-step workflow:
+python zalo_phase2.py discover           # Find SQL contacts in sidebar
+python zalo_phase2.py extract            # Extract/resume conversations
+python zalo_phase2.py status             # Show progress
+python zalo_phase2.py export             # Regenerate CSV + JSON from SQLite
+python zalo_phase2.py export --format csv --output custom.csv
 
-**Cách chạy:**
-1. Mở Zalo PC và đăng nhập.
-2. Chọn một cuộc trò chuyện bất kỳ và để cửa sổ Zalo ở trạng thái đang mở.
-3. Chạy lệnh sau trên terminal/PowerShell:
-   ```powershell
-   .\.venv\Scripts\activate
-   python dump_zalo_ui.py
-   ```
-4. Kiểm tra file `zalo_ui_tree.txt` được tạo ra. Trong file này, hãy tìm kiếm một vài đoạn tin nhắn hiện đang hiển thị trên màn hình Zalo của bạn xem nó có xuất hiện dưới dạng `title` hay thuộc tính nào của control không.
+# Transform raw CSV into a clean conversational format
+python transform_zalo_csv.py --input "zalo_all_sql_history.csv" --output "zalo_messages_clean.csv"
+```
 
-**Hãy cho tôi biết kết quả (hoặc cung cấp một phần nội dung của file `zalo_ui_tree.txt` chứa đoạn tin nhắn)**. Nếu cây UI hiển thị được nội dung, chúng ta sẽ viết script lấy dữ liệu (extractor) ngay ở bước sau. Nếu không, chúng ta phải dừng và tìm cách khác.
+### Discovery methods
 
-## Bước 2: Chạy thử bản lấy dữ liệu (Phase 1 Extractor)
+```powershell
+python zalo_phase2.py --method scroll    # Scroll entire sidebar (default)
+python zalo_phase2.py --method search    # Use Zalo's search bar
+python zalo_phase2.py --method both      # Try search first, fall back to scroll
+```
 
-Từ file UI tree đã khảo sát được, tôi xác nhận **Zalo CÓ xuất nội dung tin nhắn** ra accessibility tree thông qua container `messageView`. Zalo sử dụng cơ chế "ảo hóa" (virtualization) nên những tin nhắn bị cuộn khuất sẽ có tọa độ ẩn (width=0).
+## Stopping
 
-Script `zalo_extractor.py` sẽ thực hiện đúng yêu cầu Phase 1 của bạn:
-1. Đọc tất cả các thành phần văn bản đang **hiển thị thực tế** trên màn hình.
-2. Dựa vào tọa độ X của đoạn text so với tâm màn hình để phân biệt tin nhắn của "Mình" (Me) nằm bên phải và của "Người kia" (Other) nằm bên trái.
-3. Tự động cuộn lên (PageUp / Wheel) tối đa 3 lần để lấy thêm tin nhắn cũ bị khuất.
-4. Ghi nhận dữ liệu ra `zalo_extracted.json` và `zalo_extracted.csv` (hỗ trợ UTF-8 BOM cho Excel).
-5. Chưa lọc trùng lắp thông minh ở bước này (vì tin nhắn text có thể giống hệt nhau), chỉ thu thập thô mọi thứ quan sát được đúng thứ tự hiển thị.
+**Press F8** at any time to stop safely. The script will:
+1. Finish the current database commit.
+2. Mark the conversation as partial.
+3. Stop reclaiming foreground focus (so you regain control).
 
-**Cách chạy lấy dữ liệu:**
-1. Đảm bảo Zalo đang mở và đang ở trong một cuộc trò chuyện.
-2. Chạy lệnh:
-   ```powershell
-   python zalo_extractor.py
-   ```
-3. Script sẽ tự focus vào cửa sổ Zalo, cuộn 3 lần, và kết xuất dữ liệu.
-4. Mở file `zalo_extracted.csv` (bằng Excel) để xem thành quả. 
+Data committed before the stop is preserved. Run `extract` again to resume.
 
-**Kết quả:**
-- **Đọc được**: Nội dung tin nhắn (bao gồm cả emoji), dấu thời gian rời rạc, phân biệt được người gửi dựa theo tọa độ trái/phải.
-- **Chưa đọc được**: Zalo không gắn liền thời gian/người gửi vào thành một cục (node) duy nhất cho mỗi tin nhắn, mà render mọi thứ như một danh sách text phẳng. ID hội thoại và message ID cũng không được lộ ra.
-- **Lệnh cần chạy**: Bạn hãy chạy `python zalo_extractor.py` và kiểm tra file CSV, sau đó phản hồi lại nếu kết quả đã đáp ứng yêu cầu khảo sát Phase 1 để chuẩn bị cho Phase 2.
+Do **not** need to use Ctrl+C — the F8 hotkey works from any window.
+
+## Resuming after crash/stop
+
+```powershell
+python zalo_phase2.py status     # Check what was completed
+python zalo_phase2.py extract    # Resume from where it left off
+```
+
+The SQLite database (`zalo_exporter.db`) stores all progress. Completed
+conversations are skipped on resume. Partial conversations restart extraction.
+
+## Output files
+
+| File | Description |
+|------|-------------|
+| `zalo_exporter.db` | SQLite database with all raw observations |
+| `zalo_all_sql_history.csv` | CSV export (UTF-8 BOM for Excel) |
+| `zalo_all_sql_history.json` | JSON export |
+| `zalo_messages_clean.csv` | Cleaned conversational CSV (created by transform script) |
+
+## How it works
+
+1. **Discovery**: Scrolls the Zalo sidebar (or uses search) to find contacts
+   with "sql" in their nickname. Names are Unicode-normalized for matching.
+
+2. **Extraction**: For each contact, clicks to open the conversation, scrolls
+   to the bottom, then scrolls upward reading visible messages. Uses adaptive
+   waits (polls for content stability instead of fixed sleeps) for speed.
+
+3. **Persistence**: Each viewport batch is committed to SQLite immediately.
+   Crashes lose at most one viewport of data.
+
+4. **Export**: CSV and JSON are generated from the SQLite database on demand.
+
+5. **Transformation**: The `transform_zalo_csv.py` script cleans the raw CSV export into a readable conversational format, grouping by conversation, reconstructing oldest-to-newest order, extracting dates and times into separate columns, and mapping senders.
+
+## Troubleshooting
+
+**"Zalo PC not found"**: Make sure Zalo is open. The window title must be
+exactly "Zalo".
+
+**Mouse scrolling in wrong window**: The script calls `SetForegroundWindow`
+to bring Zalo to front. Don't click other windows while it runs.
+
+**Missed contacts**: Try `--method both` to combine search and scroll
+discovery. Run `status` to see what was found.
+
+**Slow extraction**: The adaptive wait system should be significantly faster
+than the old fixed 1.5s sleep. If loading is slow, the script backs off
+automatically.
+
+## Debug
+
+```powershell
+python dump_zalo_ui.py          # Dump Zalo's UI tree to zalo_ui_tree.txt
+```
+
+## Data privacy
+
+All data stays local. The `.gitignore` excludes databases, CSVs, JSONs,
+and UI dumps from version control.

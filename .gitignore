@@ -6,9 +6,19 @@ __pycache__/
 venv/
 env/
 
-# Data outputs and logs
+# Data outputs and logs (contain private conversation content)
 *.csv
 *.json
 *.txt
 !requirements.txt
 !README.md
+!AGENTS.md
+
+# SQLite databases and sidecar files
+*.db
+*.db-wal
+*.db-shm
+
+# UI dumps
+zalo_ui_tree.txt
+dump_*.py
