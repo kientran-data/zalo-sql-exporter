@@ -30,7 +30,11 @@ python zalo_phase2.py status             # Show progress
 python zalo_phase2.py export             # Regenerate CSV + JSON from SQLite
 python zalo_phase2.py export --format csv --output custom.csv
 
-# Transform raw CSV into a clean conversational format
+# Clean and prepare for downstream analysis (Recommended):
+# 2-pass deduplication (block overlap + 60-message sliding window), filters reactions/noise, propagates date/time
+python format_for_analysis.py --input "zalo_all_sql_history.csv" --output "zalo_clean.csv"
+
+# Basic transform into conversational format:
 python transform_zalo_csv.py --input "zalo_all_sql_history.csv" --output "zalo_messages_clean.csv"
 ```
 
@@ -68,9 +72,10 @@ conversations are skipped on resume. Partial conversations restart extraction.
 | File | Description |
 |------|-------------|
 | `zalo_exporter.db` | SQLite database with all raw observations |
-| `zalo_all_sql_history.csv` | CSV export (UTF-8 BOM for Excel) |
-| `zalo_all_sql_history.json` | JSON export |
-| `zalo_messages_clean.csv` | Cleaned conversational CSV (created by transform script) |
+| `zalo_all_sql_history.csv` | Raw CSV export from SQLite (UTF-8 BOM for Excel) |
+| `zalo_all_sql_history.json` | Raw JSON export from SQLite |
+| `zalo_clean.csv` | Clean analysis-ready CSV: 2-pass dedup, date/time propagated, noise & reactions removed |
+| `zalo_messages_clean.csv` | Basic conversational CSV (produced by `transform_zalo_csv.py`) |
 
 ## How it works
 
@@ -86,7 +91,12 @@ conversations are skipped on resume. Partial conversations restart extraction.
 
 4. **Export**: CSV and JSON are generated from the SQLite database on demand.
 
-5. **Transformation**: The `transform_zalo_csv.py` script cleans the raw CSV export into a readable conversational format, grouping by conversation, reconstructing oldest-to-newest order, extracting dates and times into separate columns, and mapping senders.
+5. **Clean & Analysis Pipeline**: `format_for_analysis.py` processes raw exports:
+   - Maps senders (`me` -> `Tôi`, `other` -> `Đối phương`).
+   - Removes UI noise ("chưa có tin nhắn nào", "photo", "sticker", etc.) and reaction emoticon codes (`/-strong`, `/-heart`, `:>`, `:o`, `:-((`, etc.).
+   - Propagates date and time markers to each message row.
+   - Applies **two-pass deduplication**: Pass 1 removes consecutive multi-message block overlaps from scroll boundaries; Pass 2 scans a 60-message sliding window for near-duplicates caused by UI virtualization artifacts while preserving short conversational phrases ("ok", "dạ").
+
 
 ## Troubleshooting
 

@@ -18,7 +18,8 @@ zalo_exporter/
 ├── name_matching.py  # Unicode normalization, SQL matching
 └── ui_driver.py      # Window management, scrolling, F8 hotkey
 
-transform_zalo_csv.py # Transform raw CSV into readable conversational format
+format_for_analysis.py # Analysis pipeline: 2-pass dedup, noise/reaction filter, date/time propagation
+transform_zalo_csv.py # Simple/legacy CSV transformation into conversational format
 ```
 
 Entry point: `zalo_phase2.py` → `zalo_exporter.cli.main()`.
@@ -29,6 +30,7 @@ Entry point: `zalo_phase2.py` → `zalo_exporter.cli.main()`.
 2. `zalo_exporter/config.py` — all tunable constants.
 3. `zalo_exporter/db.py` — database schema and commit logic.
 4. `zalo_exporter/cli.py` — command flow.
+5. `format_for_analysis.py` — post-export deduplication and analytical formatting.
 
 ## Data integrity rules
 
@@ -38,14 +40,18 @@ Entry point: `zalo_phase2.py` → `zalo_exporter.cli.main()`.
 - **WAL mode** for crash safety.
 - **Do not interact with the Zalo message composer** (`richInput`).
 - **Verify open conversation name** before assigning captured messages.
+- **Post-processing deduplication**: Use `format_for_analysis.py` for downstream
+  cleaning. It runs a 2-pass dedup (block overlap + sliding window lookback for
+  scroll artifacts) without altering raw observations in SQLite.
 
 ## Validation approach
 
-Run `python -m unittest tests.test_core -v` to validate:
+Run `python -m unittest discover -s tests -v` to validate:
 - Name matching for all required patterns.
 - Database commit/checkpoint consistency.
 - Crash safety (close + reopen preserves data).
 - Overlap reconciliation preserving consecutive identical messages.
+- Date/time parsing, noise/reaction filters, and formatting.
 
 ## Known limitations
 

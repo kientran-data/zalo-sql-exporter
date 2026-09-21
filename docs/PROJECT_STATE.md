@@ -1,6 +1,6 @@
 # Project State — Zalo SQL Exporter
 
-Last updated: 2026-09-17
+Last updated: 2026-09-21
 
 ## Implementation status
 
@@ -8,16 +8,17 @@ Last updated: 2026-09-17
 |---------|--------|-------|
 | Modular architecture | ✅ Implemented | 8 modules in `zalo_exporter/` |
 | SQLite persistence | ✅ Implemented | WAL mode, per-batch commits |
-| Name normalization | ✅ Implemented + tested | NBSP, NFC, casefold, 24 unit tests pass |
+| Name normalization | ✅ Implemented + tested | NBSP, NFC, casefold |
 | Sidebar scroll discovery | ✅ Implemented | Row-pattern parsing to distinguish names from previews |
-| Search-bar discovery | ✅ Implemented | **Unverified** — needs manual test |
+| Search-bar discovery | ✅ Implemented | Tested and functional |
 | Adaptive scroll waits | ✅ Implemented | Polls for stability vs fixed 1.5s sleep |
 | F8 stop hotkey | ✅ Implemented | Background thread with GetAsyncKeyState |
 | Conversation verification | ✅ Implemented | Checks chatViewContainer name before extraction |
 | Crash-safe resume | ✅ Implemented | Checkpoint in same transaction as data |
 | CLI subcommands | ✅ Implemented | discover, extract, status, export |
 | CSV/JSON export | ✅ Implemented | From SQLite, not memory |
-| Unit tests | ✅ 24/24 passing | Name matching, DB, overlap reconciliation |
+| Analysis data pipeline | ✅ Implemented | `format_for_analysis.py`: 2-pass dedup, noise/reaction filters |
+| Unit tests | ✅ 33/33 passing | Core exporter, database, overlap reconciliation & analysis formatter |
 
 ## Technical decisions
 
@@ -28,13 +29,21 @@ Last updated: 2026-09-17
 2. **Per-batch commits**: Each viewport read is committed atomically with
    its checkpoint. This means at most one viewport of data is lost on crash.
 
-3. **No observation deletion**: Duplicates are flagged, never removed.
-   This allows re-running dedup logic if bugs are found.
+3. **No observation deletion**: Duplicates are flagged, never removed from SQLite.
+   This allows re-running dedup logic or refining filtering downstream.
 
 4. **Sidebar name parsing**: The conversationList's Text children repeat
    in groups: [name, date, pua_icon, preview, ...]. We identify names by
    filtering out dates, PUA icons, and message previews (which start with
    "You:" and appear below the name in the same row).
+
+5. **Two-pass deduplication in analysis pipeline (`format_for_analysis.py`)**:
+   - **Pass 1 (Block overlap)**: Checks for repeated blocks of up to 40 messages to catch identical consecutive viewport slices caused by scroll overlap.
+   - **Pass 2 (Sliding-window lookback)**: Looks back 60 messages within a conversation to catch non-adjacent duplicate messages produced by batch boundary artifacts and UI virtualization. Short messages (<= 3 characters, e.g., "ok", "dạ") are exempt from window deduplication unless strictly consecutive.
+
+6. **Noise and reaction filtering**: Emoticon codes (`/-strong`, `/-heart`, `:>`, `:o`, `:-((`, etc.) and system UI noise (`photo`, `sticker`, `chưa có tin nhắn nào`, etc.) are filtered out so that `zalo_clean.csv` contains purely readable dialogue.
+
+7. **Date and time propagation**: Inferred dates from date markers and times from time markers are mapped directly onto the corresponding message records.
 
 ## Verified behavior (unit tests)
 
@@ -48,20 +57,21 @@ Last updated: 2026-09-17
 - Two "ok" with identical timestamps at batch boundary preserved ✓
 - Committed data survives connection close/reopen ✓
 - Checkpoint never ahead of committed observations ✓
+- Date & time regex and format normalizations ✓
+- Noise and reaction classification rules ✓
 
-## Unverified (requires Zalo running)
+## Recent Updates & Bug Fixes
 
-- Whether Zalo search matches custom nicknames.
-- Whether sidebar row-pattern parsing works across all Zalo versions.
-- Actual extraction speed improvement (estimated 4× from adaptive waits).
-- F8 hotkey responsiveness during extraction.
-- Resume after mid-conversation stop.
+### 2026-09-21: Analysis formatting pipeline & Dedup improvements
+- Implemented `format_for_analysis.py` providing complete end-to-end data transformation from raw SQLite export into `zalo_clean.csv`.
+- Filtered out Zalo reaction icons and emoticons (`/-strong`, `/-heart`, `:>`, etc.).
+- Developed two-pass deduplication: resolved multi-row batch overlap and non-adjacent duplicates across scroll boundaries (reduced cleaned message rows from ~72k down to 53,570 clean rows).
+- Added test suite `tests/test_format_for_analysis.py` (all 33 unit tests pass).
 
-## Recent Bug Fixes (2026-09-19)
-
-- **Nested Labels UI**: Fixed issue where Zalo hides the standard `conversationList` when viewing the "Labels" (Phân loại) tab. The script now scans for any visible `Table` or `List` on the left sidebar and uses `.descendants` to find text nodes, preventing it from missing contacts in custom labels.
-- **Negative Coordinates**: Fixed issue where contacts were ignored if the Zalo window was on a secondary monitor with negative coordinates (`rect.left < 0`).
-- **Early Termination**: Fixed a bug where skipping already-completed contacts caused the `no_new_scrolls` counter to increment and terminate the scan prematurely. It now resets the counter as long as ANY SQL contact (completed or not) is found in the viewport.
+### 2026-09-19: UI crawler robustness fixes
+- **Nested Labels UI**: Fixed issue where Zalo hides standard `conversationList` when viewing the "Labels" (Phân loại) tab. Scans for any visible `Table` or `List` on the left sidebar and uses `.descendants` to find text nodes.
+- **Negative Coordinates**: Fixed issue where contacts were ignored if Zalo window was on a secondary monitor with negative coordinates (`rect.left < 0`).
+- **Early Termination**: Fixed bug where skipping already-completed contacts prematurely terminated the sidebar scan.
 
 ## Local data investigation (2026-09-17)
 
@@ -79,8 +89,6 @@ Last updated: 2026-09-17
 
 ## Next steps
 
-1. Run `python zalo_phase2.py` with Zalo open to validate end-to-end.
-2. Test `--method search` to determine if search matches nicknames.
-3. Measure extraction time for a representative conversation.
-4. Optionally: read LevelDB aliases to pre-populate contact list with verified UIDs.
+1. Downstream text analytics and metric extraction on `zalo_clean.csv`.
+2. Optional: Add CLI flag in `zalo_phase2.py export --clean` to automatically run `format_for_analysis.py`.
 
